@@ -52,7 +52,7 @@ pre {
     background-color: #FFFFFF;
     color: #000000;
     line-height: 1.5;
-    list-style-type: none;
+    list-style-type: decimal;
 }
 
 .source-lines li {
@@ -62,11 +62,9 @@ pre {
     overflow-wrap: anywhere;
 }
 
-.source-lines li:before {
+.source-lines li::marker {
     content: counter(list-item);
     color: #000000;
-    margin-left: -3em;
-    padding-right: 1em;
 }
 
 .toc-title {
