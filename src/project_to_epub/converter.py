@@ -11,6 +11,7 @@ from typing import Any, List, Mapping, Optional, Tuple, Union
 import typer
 
 from project_to_epub.config import ConversionConfig
+from project_to_epub.ctags import TagIndex, build_tag_index, link_tag_references
 from project_to_epub.epub import (
     NAV_FILE,
     NCX_FILE,
@@ -125,6 +126,7 @@ def render_project_file(
     project: Project,
     epub_dir: Path,
     formatter,
+    tags: Optional[TagIndex] = None,
 ) -> Optional[RenderedFile]:
     """Render one scanned file into the EPUB workspace."""
     content = project.get_file_content(file_entry)
@@ -136,6 +138,8 @@ def render_project_file(
     relative_path = file_entry.relative_path.as_posix()
     file_id = f"file_{file_index}"
     file_name = f"{file_id}.xhtml"
+    if tags:
+        html_content = link_tag_references(html_content, file_entry, tags)
     write_text_file(
         epub_dir / file_name,
         render_file_xhtml(file_entry.relative_path, html_content),
@@ -161,6 +165,7 @@ def render_project_files(
     epub_dir: Path,
     formatter,
     progress,
+    tags: Optional[TagIndex] = None,
 ) -> Tuple[List[HtmlFile], List[TocItem], BuildStats]:
     """Render all project files into XHTML pages."""
     html_files: List[HtmlFile] = []
@@ -175,6 +180,7 @@ def render_project_files(
                 project,
                 epub_dir,
                 formatter,
+                tags,
             )
             if rendered_file is None:
                 stats.error_files += 1
@@ -242,6 +248,14 @@ def convert_project_to_epub(
 
     with typer.progressbar(
         length=len(project.files),
+        label="Building Ctags index",
+        show_eta=True,
+        show_pos=True,
+    ) as tag_progress:
+        tag_index = build_tag_index(project.files, tag_progress)
+
+    with typer.progressbar(
+        length=len(project.files),
         label="Converting project to EPUB",
         show_eta=True,
         show_pos=True,
@@ -256,6 +270,7 @@ def convert_project_to_epub(
                 epub_dir,
                 formatter,
                 progress,
+                tag_index,
             )
             toc_items_for_display = select_toc_items_for_display(
                 toc_items,
