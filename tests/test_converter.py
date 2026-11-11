@@ -38,7 +38,7 @@ def test_create_highlight_formatter():
     assert formatter.style.__name__ == "EInkMonochromeStyle"
     assert formatter.noclasses is True
     assert formatter.nobackground is True
-    assert formatter.linenos
+    assert not formatter.linenos
 
     # Test standard theme
     formatter = create_highlight_formatter("monokai")
@@ -101,8 +101,9 @@ def test_default_eink_highlighting_uses_monochrome_styles():
     assert_uses_only_black_white_hex_colors(html)
     assert_has_no_colored_inline_styles(html)
     assert "background:" not in html
-    assert 'class="linenos"' in html
-    assert 'class="highlighttable"' in html
+    assert 'class="source-lines"' in html
+    assert "<li>" in html
+    assert "<table" not in html
     assert "font-weight: bold" in html
     assert "font-style: italic" in html
 
@@ -122,8 +123,8 @@ def hello_world():
 
     assert_uses_only_black_white_hex_colors(html)
     assert_has_no_colored_inline_styles(html)
-    assert 'class="linenos"' in html
-    assert 'class="codehilitetable"' in html
+    assert 'class="source-lines"' not in html
+    assert "<table" not in html
     assert "font-weight: bold" in html
     assert "font-style: italic" in html
 

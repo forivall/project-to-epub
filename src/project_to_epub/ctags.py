@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import threading
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html import escape
 from typing import Dict, List, Optional, Set, Tuple, TypedDict, cast
@@ -235,30 +236,17 @@ def insert_line_anchors(html: str, anchors_by_line: Dict[int, Set[str]]) -> str:
     """Insert XHTML anchors at source line starts in a highlighted code block."""
     if not anchors_by_line:
         return html
-
-    def add_anchors(match):
-        lines = match.group("code").splitlines(keepends=True)
+    wrapper = ET.fromstring(f"<fragment>{html}</fragment>")
+    lines = wrapper.find(".//ol[@class='source-lines']")
+    if lines is not None:
         for line_number, fragments in anchors_by_line.items():
             if 1 <= line_number <= len(lines):
-                anchors = "".join(
-                    f'<span id="{xml_escape(fragment)}"></span>'
-                    for fragment in sorted(fragments)
-                )
-                lines[line_number - 1] = anchors + lines[line_number - 1]
-        return match.group("open") + "".join(lines) + match.group("close")
+                for fragment in sorted(fragments):
+                    anchor = ET.Element("span", {"id": fragment})
+                    lines[line_number - 1].insert(0, anchor)
+        return "".join(
+            ET.tostring(child, encoding="unicode", method="xml") for child in wrapper
+        )
 
-    code_pre = re.compile(
-        r'(?P<open><td class="code">\s*<div>\s*<pre[^>]*>)'
-        r"(?P<code>.*?)"
-        r"(?P<close></pre>)",
-        re.DOTALL,
-    )
-    highlighted_match = code_pre.search(html)
-    if highlighted_match is not None:
-        return code_pre.sub(add_anchors, html, count=1)
-
-    # Fallback highlighting emits a plain <pre> without Pygments' code table.
-    plain_pre = re.compile(
-        r"(?P<open><pre[^>]*>)(?P<code>.*?)(?P<close></pre>)", re.DOTALL
-    )
-    return plain_pre.sub(add_anchors, html, count=1)
+    # Plain fallback fragments have no list structure, so preserve them unchanged.
+    return html

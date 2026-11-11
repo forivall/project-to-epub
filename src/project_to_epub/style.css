@@ -40,47 +40,25 @@ pre {
     color: #000000;
 }
 
-.highlighttable,
-.codehilitetable {
-    border: 1px solid #000000;
-    border-collapse: collapse;
-    width: 100%;
-}
-
-.highlighttable td,
-.codehilitetable td {
-    padding: 0;
-    vertical-align: top;
-}
-
-.highlighttable pre,
-.codehilitetable pre {
-    border: none;
+.source-lines {
     margin: 0;
+    padding: 0 0 0 3em;
+    border: 1px solid #000000;
+    background-color: #FFFFFF;
+    color: #000000;
+    line-height: 1.5;
+    list-style-type: decimal;
 }
 
-.linenos {
-    border-right: 1px solid #000000;
-    user-select: none;
-    white-space: nowrap;
-    width: auto;
+.source-lines li {
+    padding-left: 0.5em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
-.linenodiv {
-    white-space: nowrap;
-}
-
-.linenos pre {
-    overflow-wrap: normal;
-    padding: 0.5em 0;
-    text-align: right;
-    white-space: pre;
-    word-wrap: normal;
-}
-
-.linenos span {
-    padding-left: 0.2em !important;
-    padding-right: 0.35em !important;
+.source-lines li::marker {
+    color: #000000;
 }
 
 .toc-title {
