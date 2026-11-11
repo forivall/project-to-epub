@@ -65,7 +65,7 @@ def create_highlight_formatter(theme_name: str) -> HtmlFormatter:
             cssclass="highlight",
             linenos=False,
             full=False,
-            noclasses=True,
+            noclasses=False,
             nobackground=True,
         )
 
@@ -75,7 +75,7 @@ def create_highlight_formatter(theme_name: str) -> HtmlFormatter:
             cssclass="highlight",
             linenos=False,
             full=False,
-            noclasses=True,
+            noclasses=False,
         )
     except pygments.util.ClassNotFound:
         logger.warning(f"Theme '{theme_name}' not found, falling back to 'default'")
@@ -84,11 +84,11 @@ def create_highlight_formatter(theme_name: str) -> HtmlFormatter:
             cssclass="highlight",
             linenos=False,
             full=False,
-            noclasses=True,
+            noclasses=False,
         )
 
 
-def get_css_for_epub() -> str:
+def get_css_for_epub(formatter: Optional[HtmlFormatter] = None) -> str:
     """
     Get base CSS for EPUB styling.
 
@@ -96,9 +96,12 @@ def get_css_for_epub() -> str:
         str: CSS content
     """
     if files is not None:
-        return (files("project_to_epub") / "style.css").read_text(encoding="utf-8")
-
-    return read_text("project_to_epub", "style.css", encoding="utf-8")
+        css = (files("project_to_epub") / "style.css").read_text(encoding="utf-8")
+    else:
+        css = read_text("project_to_epub", "style.css", encoding="utf-8")
+    if formatter is not None:
+        css += "\n" + formatter.get_style_defs(".highlight")
+    return css
 
 
 def highlight_code(content: str, lexer, formatter: HtmlFormatter) -> str:

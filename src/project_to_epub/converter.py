@@ -268,7 +268,7 @@ def convert_project_to_epub(
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            epub_dir = create_epub_workspace(temp_path, get_css_for_epub())
+            epub_dir = create_epub_workspace(temp_path, get_css_for_epub(formatter))
             html_files, toc_items, stats = render_project_files(
                 project,
                 epub_dir,

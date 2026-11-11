@@ -110,6 +110,69 @@ class CTag(Tag):
 TagIndex = Dict[str, CTag]
 
 
+class _TagReferenceLinker:
+    """Visit highlighted XML and link names inside Pygments name tokens."""
+
+    def __init__(self, entry: FileEntry, tags: TagIndex) -> None:
+        self.entry = entry
+        self.tags = tags
+        symbols = sorted(tags, key=len, reverse=True)
+        self.pattern = re.compile(
+            r"(?<![\w])(?:" + "|".join(re.escape(name) for name in symbols) + r")(?![\w])"
+        )
+
+    @staticmethod
+    def transform_str(html: str, entry: FileEntry, tags: TagIndex) -> str:
+        wrapper = ET.fromstring(f"<fragment>{html}</fragment>")
+        _TagReferenceLinker(entry, tags).transform(wrapper)
+        return "".join(
+            ET.tostring(child, encoding="unicode", method="xml") for child in wrapper
+        )
+
+    def transform(self, fragment: ET.Element) -> ET.Element:
+        """Visit the fragment tree and add links to matching name tokens."""
+        self.visit(fragment)
+        return fragment
+
+    def visit(
+        self,
+        source: ET.Element,
+        inside_name: bool = False,
+        inside_link: bool = False,
+    ) -> None:
+        """Visit a node and its children, preserving all non-link markup."""
+        classes = source.get("class", "").split()
+        is_name = inside_name or any(
+            value == "n" or value.startswith("n") for value in classes
+        )
+        is_link = inside_link or source.tag == "a"
+        if is_name and not is_link:
+            self.link_text(source)
+        for child in source:
+            self.visit(child, is_name, is_link)
+
+    def link_text(self, source: ET.Element) -> None:
+        """Replace matching portions of a name token's text with anchors."""
+        if not source.text:
+            return
+        original = source.text
+        matches = list(self.pattern.finditer(original))
+        if not matches:
+            return
+        source.text = original[: matches[0].start()] or None
+        for match_index, match in enumerate(matches):
+            name = match.group(0)
+            link = ET.Element("a", {"href": self.tags[name].url_from(self.entry)})
+            link.text = name
+            next_start = (
+                matches[match_index + 1].start()
+                if match_index + 1 < len(matches)
+                else len(original)
+            )
+            link.tail = original[match.end() : next_start] or None
+            source.insert(match_index, link)
+
+
 def build_tag_index(files: List[FileEntry], progress=None) -> TagIndex:
     """Return symbols mapped to their EPUB file and fragment, using Universal Ctags."""
     executable = shutil.which("ctags")
@@ -205,24 +268,7 @@ def link_tag_references(html: str, entry: FileEntry, tags: TagIndex) -> str:
     if not tags:
         return html
 
-    symbols = sorted(tags, key=len, reverse=True)
-    pattern = re.compile(
-        r"(?<![\w])(?:" + "|".join(re.escape(x) for x in symbols) + r")(?![\w])"
-    )
-    chunks = re.split(r"(<[^>]+>)", html)
-    for index in range(0, len(chunks), 2):
-        text = chunks[index]
-        if not text:
-            continue
-
-        def replace(match):
-            name = match.group(0)
-            href = tags[name].url_from(entry)
-            return f'<a href="{href}">{name}</a>'
-
-        chunks[index] = pattern.sub(replace, text)
-
-    html_content = "".join(chunks)
+    html_content = _TagReferenceLinker.transform_str(html, entry, tags)
     anchors_by_line: Dict[int, Set[str]] = {}
     for tag in tags.values():
         anchor = tag.anchor_for(entry)
