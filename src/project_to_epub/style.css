@@ -63,6 +63,7 @@ pre {
 }
 
 .source-lines li::marker {
+    content: counter(list-item);
     color: #000000;
 }
 
