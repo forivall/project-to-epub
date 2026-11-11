@@ -6,9 +6,13 @@ import logging
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, List, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Mapping, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from typer._click.termui import ProgressBar
 
 import typer
+from pygments.formatters import HtmlFormatter
 
 from project_to_epub.config import ConversionConfig
 from project_to_epub.ctags import TagIndex, build_tag_index, link_tag_references
@@ -125,7 +129,7 @@ def render_project_file(
     file_index: int,
     project: Project,
     epub_dir: Path,
-    formatter,
+    formatter: HtmlFormatter,
     tags: Optional[TagIndex] = None,
 ) -> Optional[RenderedFile]:
     """Render one scanned file into the EPUB workspace."""
@@ -163,8 +167,8 @@ def render_project_file(
 def render_project_files(
     project: Project,
     epub_dir: Path,
-    formatter,
-    progress,
+    formatter: HtmlFormatter,
+    progress: 'ProgressBar[int]',
     tags: Optional[TagIndex] = None,
 ) -> Tuple[List[HtmlFile], List[TocItem], BuildStats]:
     """Render all project files into XHTML pages."""
