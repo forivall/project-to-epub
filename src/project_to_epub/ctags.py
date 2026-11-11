@@ -162,7 +162,13 @@ class _TagReferenceLinker:
         source.text = original[: matches[0].start()] or None
         for match_index, match in enumerate(matches):
             name = match.group(0)
-            link = ET.Element("a", {"href": self.tags[name].url_from(self.entry)})
+            link = ET.Element(
+                "a",
+                {
+                    "class": "ctags-reference",
+                    "href": self.tags[name].url_from(self.entry),
+                },
+            )
             link.text = name
             next_start = (
                 matches[match_index + 1].start()
