@@ -65,8 +65,11 @@ pre {
 .source-lines li:before {
     content: counter(list-item);
     color: #000000;
-    margin-left: -3em;
-    padding-right: 1em;
+    text-align: right;
+    margin-left: -5ch;
+    padding-right: 0.8ch;
+    display: inline-block;
+    min-width: 5ch;
 }
 
 .toc-title {
