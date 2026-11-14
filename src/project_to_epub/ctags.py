@@ -2,12 +2,12 @@
 
 import json
 import logging
+import posixpath
 import re
 import shutil
 import subprocess
 import threading
 import xml.etree.ElementTree as ET
-from collections import OrderedDict
 from dataclasses import dataclass
 from html import escape
 from itertools import groupby
@@ -46,10 +46,10 @@ K = TypeVar("K")
 def sort_and_group(
     values: list[T],
     key: Callable[[T], Tuple[K, Unpack[Tuple]]],
-) -> Dict[K, OrderedDict[T, None]]:
+) -> Dict[K, list[T]]:
     sorted_values = sorted(values, key=key)
     return {
-        name: OrderedDict.fromkeys(group)
+        name: list(group)
         for name, group in groupby(sorted_values, key=lambda tag: key(tag)[0])
     }
 
@@ -63,14 +63,37 @@ class CtagsRecord(TypedDict, total=False):
     pattern: str
     line: int
     kind: str
+    roles: str
 
 
 @dataclass(frozen=True)
-class Tag:
-    name: str
+class CTagParsed:
+    record: CtagsRecord
     file: FileEntry
     file_index: int
-    record: CtagsRecord
+
+    @property
+    def file_name(self) -> str:
+        """XHTML page name for a scanned file index."""
+        return f"file_{self.file_index}.xhtml"
+
+    @property
+    def line_number(self) -> int:
+        return self.record["line"]
+
+
+@dataclass(frozen=True)
+class IncludeReference(CTagParsed):
+    target_file_index: int
+
+    @property
+    def target_file_name(self) -> str:
+        return f"file_{self.target_file_index}.xhtml"
+
+
+@dataclass(frozen=True)
+class Tag(CTagParsed):
+    name: str
 
     def __hash__(self) -> int:
         return hash((self.name, self.file_index, self.line_number))
@@ -121,9 +144,28 @@ class Tag:
         return None
 
 
-TagsByName = Dict[str, OrderedDict[Tag, None]]
-TagsByFile = Dict[int, OrderedDict[Tag, None]]
-TagsParsed = Tuple[TagsByName, TagsByFile]
+TagsByName = Dict[str, list[Tag]]
+TagsByFile = Dict[int, list[Tag]]
+IncludesByFile = Dict[int, List[IncludeReference]]
+TagsParsed = Tuple[TagsByName, TagsByFile, IncludesByFile]
+
+
+def ctags_reference_anchor(href: str):
+    return ET.Element("a", {"class": "ctags-reference", "href": href})
+
+
+def classnames(node: ET.Element) -> list[str]:
+    classvalue = node.get("class")
+    return [] if classvalue is None else classvalue.split()
+
+
+def _replace_element(
+    container: ET.Element, target: ET.Element, replacement: ET.Element
+):
+    parent = next(node for node in container.iter() if target in node)
+    index = next(i for i, child in enumerate(parent) if child is target)
+    parent.remove(target)
+    parent.insert(index, replacement)
 
 
 class _TagReferenceLinker:
@@ -132,7 +174,7 @@ class _TagReferenceLinker:
     def __init__(self, file: FileEntry, file_index: int, tags: TagsParsed) -> None:
         self.file = file
         self.file_index = file_index
-        self.tags, tags_by_file = tags
+        self.tags, tags_by_file, _ = tags
         self.file_tags = tags_by_file.get(file_index, None)
         symbols = sorted(self.tags, key=len, reverse=True)
         self.pattern = re.compile(
@@ -143,7 +185,7 @@ class _TagReferenceLinker:
 
     def next_file_tag(self, name: str, or_own=False) -> Optional[Tag]:
         tags = self.tags[name]
-        for tag in tags.keys():
+        for tag in tags:
             if or_own and tag.file_index == self.file_index:
                 return tag
             if tag.file_index > self.file_index:
@@ -152,7 +194,8 @@ class _TagReferenceLinker:
 
     def transform(self, fragment: ET.Element) -> ET.Element:
         """Visit the fragment tree and add links to matching name tokens."""
-        self.visit(fragment)
+        if self.tags:
+            self.visit(fragment)
         return fragment
 
     def visit(
@@ -163,7 +206,7 @@ class _TagReferenceLinker:
         inside_link: bool = False,
     ) -> None:
         """Visit a node and its children, preserving all non-link markup."""
-        classes = source.get("class", "").split()
+        classes = classnames(source)
         if SOURCE_LINES_CLASSNAME in classes:
             for index, child in enumerate(source):
                 self.visit(child, index + 1)
@@ -207,13 +250,7 @@ class _TagReferenceLinker:
         source.text = original[: matches[0][0].start()] or None
         for match_index, (match, target) in enumerate(matches):
             name = match.group(0)
-            link = ET.Element(
-                "a",
-                {
-                    "class": "ctags-reference",
-                    "href": target.url_from(self.file),
-                },
-            )
+            link = ctags_reference_anchor(target.url_from(self.file))
             link.text = name
             if match_index + 1 < len(matches):
                 next_match, _ = matches[match_index + 1]
@@ -240,6 +277,8 @@ def build_tag_index(files: List[FileEntry], progress=None) -> Optional[TagsParse
                 executable,
                 "--output-format=json",
                 "--fields=+n",
+                "--fields=+r",
+                "--extras=+r",
                 "--sort=no",
                 "--filter=yes",
                 f"--filter-terminator={TERMINATOR}",
@@ -281,19 +320,22 @@ def build_tag_index(files: List[FileEntry], progress=None) -> Optional[TagsParse
         )
         return None
 
-    tags = list(parse_ctags_output(files, output_lines))
-    if not tags:
+    output = list(parse_ctags_output(files, output_lines))
+    tags = [tag for tag in output if isinstance(tag, Tag)]
+    includes = [inc for inc in output if isinstance(inc, IncludeReference)]
+    if not tags and not includes:
         return None
 
     return (
         sort_and_group(tags, lambda tag: (tag.name, tag.file_index, tag.line_number)),
         sort_and_group(tags, lambda tag: (tag.file_index, tag.line_number)),
+        sort_and_group(includes, lambda inc: (inc.file_index, inc.line_number)),
     )
 
 
 def parse_ctags_output(
     files: List[FileEntry], output_lines: List[str]
-) -> Generator[Tag, None, None]:
+) -> Generator[Tag | IncludeReference]:
     path_to_file = {
         str(file.absolute_path): (index, file) for index, file in enumerate(files)
     }
@@ -317,23 +359,60 @@ def parse_ctags_output(
             continue
         index, file = entry
         line_number = record.get("line")
-        if not isinstance(line_number, int) or file.language == "markdown":
+        if not isinstance(line_number, int):
             logger.debug("Skipping unsupported file %r", record)
             continue
-        yield Tag(name, file, index, record)
+        if record.get("kind") == "header" and record.get("roles") == "local":
+            include_path = record["name"].replace("\\", "/")
+            source_path = file.relative_path.as_posix()
+            target_path = posixpath.normpath(
+                posixpath.join(posixpath.dirname(source_path), include_path)
+            )
+            target = path_to_file.get(target_path)
+            if target is None:
+                continue
+            target_index, _ = target
+            yield IncludeReference(record, file, index, target_index)
+        elif file.language != "markdown" and record.get("roles") in (None, "def"):
+            yield Tag(record, file, index, name)
 
 
 def link_tag_references(
     html: str, file: FileEntry, file_index: int, tags: TagsParsed
 ) -> str:
     """Link visible identifier text and add definition anchors to a source fragment."""
-    _, tags_by_file = tags
+    _, tags_by_file, includes_by_file = tags
     wrapper = ET.fromstring(f"<fragment>{html}</fragment>")
     _insert_line_anchors(wrapper, tags_by_file.get(file_index, []))
+    _link_include_references(wrapper, file_index, includes_by_file)
     _TagReferenceLinker(file, file_index, tags).transform(wrapper)
     return "".join(
         ET.tostring(child, encoding="unicode", method="xml") for child in wrapper
     )
+
+
+def _link_include_references(
+    wrapper: ET.Element,
+    file_index: int,
+    includes_by_file: IncludesByFile,
+) -> None:
+    lines = wrapper.find(f".//ol[@class='{SOURCE_LINES_CLASSNAME}']")
+    if lines is None:
+        return
+    for ref in includes_by_file.get(file_index, []):
+        if ref.line_number < 1 or ref.line_number > len(lines):
+            logger.debug("Skipping out-of-range include line %s", ref.line_number)
+            continue
+
+        line = lines[ref.line_number - 1]
+        header_token = next(
+            (node for node in line.iter("span") if "cpf" in classnames(node)),
+            None,
+        )
+        if header_token is None:
+            continue
+        anchor = ctags_reference_anchor(ref.target_file_name)
+        _replace_element(line, header_token, anchor)
 
 
 def _insert_line_anchors(wrapper: ET.Element, tags: Collection[Tag]) -> None:
