@@ -1,10 +1,11 @@
 """Source rendering and EPUB page styling."""
-
 import logging
 import xml.etree.ElementTree as ET
 from html import escape
 from pathlib import Path
 from typing import Generator, List, Optional, Tuple, TypeVar
+
+from project_to_epub.ctags import SOURCE_LINES_CLASSNAME
 
 try:
     from importlib.resources import files
@@ -140,7 +141,7 @@ class _CodeLineListBuilder:
     """Visit highlighted XML nodes and copy their content into ordered lines."""
 
     def __init__(self) -> None:
-        self.ordered_list = ET.Element("ol", {"class": "source-lines"})
+        self.ordered_list = ET.Element("ol", {"class": SOURCE_LINES_CLASSNAME})
         self.current_line = ET.SubElement(self.ordered_list, "li")
         self.source_stack: list[ET.Element] = []
         self.output_stack = [self.current_line]

@@ -15,7 +15,7 @@ import typer
 from pygments.formatters import HtmlFormatter
 
 from project_to_epub.config import ConversionConfig
-from project_to_epub.ctags import TagIndex, build_tag_index, link_tag_references
+from project_to_epub.ctags import TagsParsed, build_tag_index, link_tag_references
 from project_to_epub.epub import (
     NAV_FILE,
     NCX_FILE,
@@ -130,7 +130,7 @@ def render_project_file(
     project: Project,
     epub_dir: Path,
     formatter: HtmlFormatter,
-    tags: Optional[TagIndex] = None,
+    tags: Optional[TagsParsed] = None,
 ) -> Optional[RenderedFile]:
     """Render one scanned file into the EPUB workspace."""
     content = project.get_file_content(file_entry)
@@ -143,7 +143,7 @@ def render_project_file(
     file_id = f"file_{file_index}"
     file_name = f"{file_id}.xhtml"
     if tags:
-        html_content = link_tag_references(html_content, file_entry, tags)
+        html_content = link_tag_references(html_content, file_entry, file_index, tags)
     write_text_file(
         epub_dir / file_name,
         render_file_xhtml(file_entry.relative_path, html_content),
@@ -168,8 +168,8 @@ def render_project_files(
     project: Project,
     epub_dir: Path,
     formatter: HtmlFormatter,
-    progress: 'ProgressBar[int]',
-    tags: Optional[TagIndex] = None,
+    progress: "ProgressBar[int]",
+    parsed_tags: Optional[TagsParsed] = None,
 ) -> Tuple[List[HtmlFile], List[TocItem], BuildStats]:
     """Render all project files into XHTML pages."""
     html_files: List[HtmlFile] = []
@@ -184,7 +184,7 @@ def render_project_files(
                 project,
                 epub_dir,
                 formatter,
-                tags,
+                parsed_tags,
             )
             if rendered_file is None:
                 stats.error_files += 1
